@@ -7,6 +7,12 @@ package frc.robot.subsystems;
 import java.util.Locale.IsoCountryCode;
 import java.util.function.DoubleSupplier;
 
+import com.ctre.phoenix6.configs.MotorOutputConfigs;
+import com.ctre.phoenix6.configs.Slot0Configs;
+import com.ctre.phoenix6.controls.VelocityVoltage;
+import com.ctre.phoenix6.hardware.TalonFX;
+import com.ctre.phoenix6.signals.InvertedValue;
+import com.ctre.phoenix6.signals.NeutralModeValue;
 import com.revrobotics.PersistMode;
 import com.revrobotics.RelativeEncoder;
 import com.revrobotics.ResetMode;
@@ -37,18 +43,18 @@ public class FuelSubSystem extends SubsystemBase {
 
   // Fields for motor controllers and sensors related to the fuel system would be declared here
   private SparkFlex feederRoller;
-  private SparkMax launcherLeft;
-  private SparkMax launcherRight;
+  //private SparkMax launcherLeft;
+  //private SparkMax launcherRight;
   private SparkFlex intakeMotor;
+
+  // Talon FX Controllers
+  private TalonFX leftShooter;
+  private TalonFX rightShooter;
+
+  private final VelocityVoltage shooter_request = new VelocityVoltage(0).withSlot(0);
+
   //private SparkFlex indexMotor;
   // Test commit
-
-  // Closed Loop Controllers for Launcher
-  private SparkClosedLoopController leftLaunchClosedLoopController;
-  private SparkClosedLoopController rightLaunchClosedLoopController;
-
-  private final RelativeEncoder m_leftLaunchEncoder;
-  private final RelativeEncoder m_rightLaunchEncoder;
 
   // Variable for Shooter Velocity Control
   private double launcherVelocitySet = 0;
@@ -62,14 +68,33 @@ public class FuelSubSystem extends SubsystemBase {
 
       // Initialize motor controllers and sensors here
       feederRoller = new SparkFlex(Constants.FuelConstants.FUEL_FEEDER_ID, MotorType.kBrushless);
-      launcherLeft = new SparkMax(Constants.FuelConstants.FUEL_SHOOTER_LEFT_ID, MotorType.kBrushless);
-      launcherRight = new SparkMax(Constants.FuelConstants.FUEL_SHOOTER_RIGHT_ID, MotorType.kBrushless);
       intakeMotor = new SparkFlex(Constants.FuelConstants.FUEL_INTAKE_ID, MotorType.kBrushless);
-      //indexMotor = new SparkFlex(Constants.FuelConstants.FUEL_INDEXER_ID, MotorType.kBrushless);
 
-      // Initialize Closed Loop Controllers
-      leftLaunchClosedLoopController = launcherLeft.getClosedLoopController();
-      rightLaunchClosedLoopController = launcherRight.getClosedLoopController();      
+      // Setup Shooter TalonFX Motors
+      leftShooter = new TalonFX(Constants.FuelConstants.FUEL_SHOOTER_LEFT_ID);
+      leftShooter.setNeutralMode(NeutralModeValue.Coast);
+
+      rightShooter = new TalonFX(Constants.FuelConstants.FUEL_SHOOTER_RIGHT_ID);
+      rightShooter.setNeutralMode(NeutralModeValue.Coast);
+      
+      // Configuration for TalonFX Motors
+      MotorOutputConfigs rightShooterConfigs = new MotorOutputConfigs();
+      rightShooterConfigs.Inverted = InvertedValue.CounterClockwise_Positive;
+      rightShooter.getConfigurator().apply(rightShooterConfigs);
+
+      MotorOutputConfigs leftShooterConfigs = new MotorOutputConfigs();
+      leftShooterConfigs.Inverted = InvertedValue.Clockwise_Positive;
+      leftShooter.getConfigurator().apply(leftShooterConfigs);
+
+      var slot0ConfigsFlywheel = new Slot0Configs();
+      slot0ConfigsFlywheel.kS = 0.1;
+      slot0ConfigsFlywheel.kV = 0.12;
+      slot0ConfigsFlywheel.kP = 0.11;
+      slot0ConfigsFlywheel.kI = 0;
+      slot0ConfigsFlywheel.kD = 0;
+      rightShooter.getConfigurator().apply(slot0ConfigsFlywheel);
+      leftShooter.getConfigurator().apply(slot0ConfigsFlywheel);
+
      
       // Setup Configuation for Intake and Feeder Motors
       SparkMaxConfig feederConfig = new SparkMaxConfig();
@@ -100,24 +125,12 @@ public class FuelSubSystem extends SubsystemBase {
         .outputRange(0, 0.95)
         .feedForward.kV( 12.0 / 5767); // 12 Volts divided by Maximum RPM of NEO (12.0 / 5767)
 
-      launcherRight.configure(launcherConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
-      //launcherConfig.disableFollowerMode();
-
-      // Invert Left
-      launcherConfig.inverted(true);
-      //launcherConfig.follow(launcherRight); // Trying to have left follow the right
-      launcherLeft.configure(launcherConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
-
-      // Encoders for Launching Motors
-      m_leftLaunchEncoder = launcherLeft.getEncoder();
-      m_rightLaunchEncoder = launcherRight.getEncoder();
-
-      m_leftLaunchEncoder.setPosition(0);
-      m_rightLaunchEncoder.setPosition(0);
-
       // Smart Dashboard
-      SmartDashboard.putNumber("Left Launcher RPM", 0);
-      SmartDashboard.putNumber("Right Launcher RPM:", 0);
+      double rightShooterVelocity = rightShooter.getVelocity().getValueAsDouble()*60;
+      double leftShooterVelocity = leftShooter.getVelocity().getValueAsDouble()*60;
+
+      SmartDashboard.putNumber("Left Launcher RPM", leftShooterVelocity);
+      SmartDashboard.putNumber("Right Launcher RPM:", rightShooterVelocity);
       SmartDashboard.putNumber("Left Launch Amps", 0);
       SmartDashboard.putNumber("Right Launch Amps", 0);
       SmartDashboard.putNumber("Shoot Velocity Set", 0);
@@ -133,15 +146,10 @@ public class FuelSubSystem extends SubsystemBase {
   public void periodic() {
     // This method will be called once per scheduler run
     // Update the Velocities of the Launcher
-    SmartDashboard.putNumber("Left Launcher RPM", m_leftLaunchEncoder.getVelocity());
-    SmartDashboard.putNumber("Right Launcher RPM:", m_rightLaunchEncoder.getVelocity());
-
-    double leftAmps = launcherLeft.getOutputCurrent();
-    double rightAmps = launcherRight.getOutputCurrent();
-
-    SmartDashboard.putNumber("Left Launch Amps", leftAmps);
-    SmartDashboard.putNumber("Right Launch Amps", rightAmps);
-    
+    double rightShooterVelocity = rightShooter.getVelocity().getValueAsDouble()*60;
+    double leftShooterVelocity = leftShooter.getVelocity().getValueAsDouble()*60;
+    SmartDashboard.putNumber("Left Launcher RPM", leftShooterVelocity);
+    SmartDashboard.putNumber("Right Launcher RPM:", rightShooterVelocity);    
 
   }
 
@@ -149,28 +157,29 @@ public class FuelSubSystem extends SubsystemBase {
 
   // Simple Turn on Left Launcher - will right follow?
   public void setLaunchPower(double power) {
-    launcherLeft.set(power); 
-    launcherRight.set(power);
+    rightShooter.set(power); 
+    leftShooter.set(power);
   }
 
+  // Modified for TalonFX
   public void setLaunchVelocity(double velocity) {
-    //Commented out to try a leader / follower format
-    leftLaunchClosedLoopController.setSetpoint(velocity, ControlType.kVelocity, ClosedLoopSlot.kSlot0);
-    rightLaunchClosedLoopController.setSetpoint(velocity, ControlType.kVelocity, ClosedLoopSlot.kSlot0);
+    rightShooter.setControl(shooter_request.withVelocity(velocity).withFeedForward(0.5));
+    leftShooter.setControl(shooter_request.withVelocity(velocity).withFeedForward(0.5));
+    
   }
 
   public void setLaunchVelocityFromSetPoint() {
-    double velocity = SmartDashboard.getNumber("Shoot Velocity Set", 0);
-    leftLaunchClosedLoopController.setSetpoint(velocity, ControlType.kVelocity, ClosedLoopSlot.kSlot0);
-    rightLaunchClosedLoopController.setSetpoint(velocity, ControlType.kVelocity, ClosedLoopSlot.kSlot0);
+    //double velocity = SmartDashboard.getNumber("Shoot Velocity Set", 0);
+    //leftLaunchClosedLoopController.setSetpoint(velocity, ControlType.kVelocity, ClosedLoopSlot.kSlot0);
+    //rightLaunchClosedLoopController.setSetpoint(velocity, ControlType.kVelocity, ClosedLoopSlot.kSlot0);
   }
 
     public void setLaunchVelocityFromLimelight() {
     double tagArea = ta.getDouble(0.9); //0.75
     double velocity = -672.98*Math.pow(tagArea, 3)+ 1948.8*Math.pow(tagArea, 2)-1872.5*tagArea+1246.2;
     velocity = velocity;
-    leftLaunchClosedLoopController.setSetpoint(velocity, ControlType.kVelocity, ClosedLoopSlot.kSlot0);
-    rightLaunchClosedLoopController.setSetpoint(velocity, ControlType.kVelocity, ClosedLoopSlot.kSlot0);
+    rightShooter.setControl(shooter_request.withVelocity(velocity).withFeedForward(0.5));
+    leftShooter.setControl(shooter_request.withVelocity(velocity).withFeedForward(0.5));
     launcherVelocitySet =  velocity;
     SmartDashboard.putNumber("Shoot Velocity Set", launcherVelocitySet);
     
@@ -180,8 +189,8 @@ public class FuelSubSystem extends SubsystemBase {
 
   // Stop Launcher
   public void stopLauncher() {
-    launcherLeft.set(0); 
-    launcherRight.set(0);
+    rightShooter.set(0); 
+    leftShooter.set(0);
   }
   public Command autoStartLauncher() {
 
