@@ -1,0 +1,293 @@
+// Copyright (c) FIRST and other WPILib contributors.
+// Open Source Software; you can modify and/or share it under the terms of
+// the WPILib BSD license file in the root directory of this project.
+
+package frc.robot.subsystems;
+
+import java.util.Locale.IsoCountryCode;
+import java.util.function.DoubleSupplier;
+
+import com.revrobotics.PersistMode;
+import com.revrobotics.RelativeEncoder;
+import com.revrobotics.ResetMode;
+import com.revrobotics.spark.ClosedLoopSlot;
+import com.revrobotics.spark.FeedbackSensor;
+import com.revrobotics.spark.SparkBase;
+import com.revrobotics.spark.SparkClosedLoopController;
+import com.revrobotics.spark.SparkFlex;
+import com.revrobotics.spark.SparkMax;
+import com.revrobotics.spark.SparkBase.ControlType;
+import com.revrobotics.spark.SparkLowLevel.MotorType;
+import com.revrobotics.spark.config.SparkMaxConfig;
+import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
+
+import edu.wpi.first.networktables.NetworkTable;
+import edu.wpi.first.networktables.NetworkTableEntry;
+import edu.wpi.first.networktables.NetworkTableInstance;
+import edu.wpi.first.units.measure.Velocity;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.Commands;
+import edu.wpi.first.wpilibj2.command.ParallelCommandGroup;
+import edu.wpi.first.wpilibj2.command.SubsystemBase;
+import frc.robot.Constants;
+import static frc.robot.Constants.FuelConstants.*;
+
+public class FuelSubSystem extends SubsystemBase {
+
+  // Fields for motor controllers and sensors related to the fuel system would be declared here
+  private SparkFlex feederRoller;
+  private SparkMax launcherLeft;
+  private SparkMax launcherRight;
+  private SparkFlex intakeMotor;
+  //private SparkFlex indexMotor;
+
+  // Closed Loop Controllers for Launcher
+  private SparkClosedLoopController leftLaunchClosedLoopController;
+  private SparkClosedLoopController rightLaunchClosedLoopController;
+
+  private final RelativeEncoder m_leftLaunchEncoder;
+  private final RelativeEncoder m_rightLaunchEncoder;
+
+  // Variable for Shooter Velocity Control
+  private double launcherVelocitySet = 0;
+
+  private NetworkTable limTable;
+  private NetworkTableEntry tx; //yw ofc :)
+  private NetworkTableEntry ta;
+
+  /** Creates a new FuelSubSystem. */
+  public FuelSubSystem() {
+
+      // Initialize motor controllers and sensors here
+      feederRoller = new SparkFlex(Constants.FuelConstants.FUEL_FEEDER_ID, MotorType.kBrushless);
+      launcherLeft = new SparkMax(Constants.FuelConstants.FUEL_SHOOTER_LEFT_ID, MotorType.kBrushless);
+      launcherRight = new SparkMax(Constants.FuelConstants.FUEL_SHOOTER_RIGHT_ID, MotorType.kBrushless);
+      intakeMotor = new SparkFlex(Constants.FuelConstants.FUEL_INTAKE_ID, MotorType.kBrushless);
+      //indexMotor = new SparkFlex(Constants.FuelConstants.FUEL_INDEXER_ID, MotorType.kBrushless);
+
+      // Initialize Closed Loop Controllers
+      leftLaunchClosedLoopController = launcherLeft.getClosedLoopController();
+      rightLaunchClosedLoopController = launcherRight.getClosedLoopController();      
+     
+      // Setup Configuation for Intake and Feeder Motors
+      SparkMaxConfig feederConfig = new SparkMaxConfig();
+      feederConfig.smartCurrentLimit(Constants.FuelConstants.CURRENT_LIMIT);
+      feederConfig.idleMode(IdleMode.kBrake);
+      feederRoller.configure(feederConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+      intakeMotor.configure(feederConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+      //indexMotor.configure(feederConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+
+      // Setup Configuration for Launcher Motors and PID
+      SparkMaxConfig launcherConfig = new SparkMaxConfig();
+      launcherConfig.smartCurrentLimit(Constants.FuelConstants.LAUNCHER_CURRENT_LIMIT);
+      launcherConfig.idleMode(IdleMode.kCoast);
+      //launcherConfig.follow(launcherLeft, true);
+
+      // PID Configuration
+      // Conversion Factors - built in so using 1
+      launcherConfig.encoder
+        .positionConversionFactor(1)
+        .velocityConversionFactor(1);
+
+      // Configure Closed Loop Control with P,I,D,Feed Forward values
+      // Defaults to Slot 0 where we are using velocity control
+      launcherConfig.closedLoop
+        .p(0.00015)
+        .i(0)
+        .d(0)
+        .outputRange(0, 0.95)
+        .feedForward.kV( 12.0 / 5767); // 12 Volts divided by Maximum RPM of NEO (12.0 / 5767)
+
+      launcherRight.configure(launcherConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+      //launcherConfig.disableFollowerMode();
+
+      // Invert Left
+      launcherConfig.inverted(true);
+      //launcherConfig.follow(launcherRight); // Trying to have left follow the right
+      launcherLeft.configure(launcherConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+
+      // Encoders for Launching Motors
+      m_leftLaunchEncoder = launcherLeft.getEncoder();
+      m_rightLaunchEncoder = launcherRight.getEncoder();
+
+      m_leftLaunchEncoder.setPosition(0);
+      m_rightLaunchEncoder.setPosition(0);
+
+      // Smart Dashboard
+      SmartDashboard.putNumber("Left Launcher RPM", 0);
+      SmartDashboard.putNumber("Right Launcher RPM:", 0);
+      SmartDashboard.putNumber("Left Launch Amps", 0);
+      SmartDashboard.putNumber("Right Launch Amps", 0);
+      SmartDashboard.putNumber("Shoot Velocity Set", 0);
+
+      // binding limelight
+      limTable = NetworkTableInstance.getDefault().getTable("limelight");
+      tx = limTable.getEntry("tx");
+      ta = limTable.getEntry("ta");
+      
+  }
+
+  @Override
+  public void periodic() {
+    // This method will be called once per scheduler run
+    // Update the Velocities of the Launcher
+    SmartDashboard.putNumber("Left Launcher RPM", m_leftLaunchEncoder.getVelocity());
+    SmartDashboard.putNumber("Right Launcher RPM:", m_rightLaunchEncoder.getVelocity());
+
+    double leftAmps = launcherLeft.getOutputCurrent();
+    double rightAmps = launcherRight.getOutputCurrent();
+
+    SmartDashboard.putNumber("Left Launch Amps", leftAmps);
+    SmartDashboard.putNumber("Right Launch Amps", rightAmps);
+    
+
+  }
+
+  // Methods
+
+  // Simple Turn on Left Launcher - will right follow?
+  public void setLaunchPower(double power) {
+    launcherLeft.set(power); 
+    launcherRight.set(power);
+  }
+
+  public void setLaunchVelocity(double velocity) {
+    //Commented out to try a leader / follower format
+    leftLaunchClosedLoopController.setSetpoint(velocity, ControlType.kVelocity, ClosedLoopSlot.kSlot0);
+    rightLaunchClosedLoopController.setSetpoint(velocity, ControlType.kVelocity, ClosedLoopSlot.kSlot0);
+  }
+
+  public void setLaunchVelocityFromSetPoint() {
+    double velocity = SmartDashboard.getNumber("Shoot Velocity Set", 0);
+    leftLaunchClosedLoopController.setSetpoint(velocity, ControlType.kVelocity, ClosedLoopSlot.kSlot0);
+    rightLaunchClosedLoopController.setSetpoint(velocity, ControlType.kVelocity, ClosedLoopSlot.kSlot0);
+  }
+
+    public void setLaunchVelocityFromLimelight() {
+    double tagArea = ta.getDouble(0.9); //0.75
+    double velocity = -672.98*Math.pow(tagArea, 3)+ 1948.8*Math.pow(tagArea, 2)-1872.5*tagArea+1246.2;
+    velocity = velocity;
+    leftLaunchClosedLoopController.setSetpoint(velocity, ControlType.kVelocity, ClosedLoopSlot.kSlot0);
+    rightLaunchClosedLoopController.setSetpoint(velocity, ControlType.kVelocity, ClosedLoopSlot.kSlot0);
+    launcherVelocitySet =  velocity;
+    SmartDashboard.putNumber("Shoot Velocity Set", launcherVelocitySet);
+    
+  }
+
+
+
+  // Stop Launcher
+  public void stopLauncher() {
+    launcherLeft.set(0); 
+    launcherRight.set(0);
+  }
+  public Command autoStartLauncher() {
+
+      return Commands.run(() -> feederRoller.setVoltage(MID_DISTANCE_VELOCITY), 
+                           this);
+  }
+  public Command autoIntake() {
+
+      return Commands.run(() -> 
+      
+      new ParallelCommandGroup(
+      autoStartLauncher(),
+      feederSpeedCommand(this, 0.8)              
+      )
+      
+      );
+  }
+
+
+  public void setFeederPower(double power) {
+    feederRoller.set(power);
+  }
+
+  public void setIntakePower(double power) {
+    intakeMotor.set(power);
+  }
+
+  public void setIntakeFeederPower(double power) {
+    intakeMotor.set(power);
+    feederRoller.set(power);
+    //indexMotor.set(power);
+  }
+
+  public void setFeederLaunchPower(double power) {
+    intakeMotor.set(-power);
+    feederRoller.set(power);
+    //indexMotor.set(power); 
+  }
+
+  
+   public void setFeederSpeed(double power) {
+    feederRoller.set(power);
+  }
+
+  public void changeTargetVelocity(double delta) {
+    launcherVelocitySet += delta;
+    if (launcherVelocitySet < 0) {
+      launcherVelocitySet = 0;
+    }
+    SmartDashboard.putNumber("Shoot Velocity Set", launcherVelocitySet);
+  }
+
+
+  // Command Factories
+
+  // Test Commands to turn on and off the Launch Motors
+  // launchSpeeedCommand net used
+  public Command launchSpeedCommand(FuelSubSystem fuelSubSystem, double speed) {
+    return Commands.runEnd(() -> setLaunchPower(speed), () -> setLaunchPower(0), fuelSubSystem);
+  }
+
+  public Command feederSpeedCommand(FuelSubSystem fuelSubsystem, double speed) {
+    return Commands.run(() -> setFeederSpeed(speed));
+  }
+
+  // Use this oune
+  public Command launchVelocityCommand(FuelSubSystem fuelSubSystem, double velocity) {
+    return Commands.run(() -> setLaunchVelocity(velocity));
+  }
+
+  // Temporary Command for testing velocity
+  public Command launchVelocityTestcommand(FuelSubSystem fuelSubSystem) {
+    return Commands.run(() -> setLaunchVelocityFromSetPoint());
+  }
+
+  // Distance Test Command
+  public Command launchVelocityLimelightCommand(FuelSubSystem fuelSubSystem) {
+    return Commands.run(() -> setLaunchVelocityFromLimelight());
+  }
+
+  public Command stopLauncherCommand(FuelSubSystem fuelSubSystem) {
+    return Commands.run(() -> stopLauncher());
+  }
+  public Command autoStartLauncherLeft(double velocity) {
+
+      return Commands.runEnd(() -> setLaunchVelocity(velocity), () -> setLaunchPower(0));
+      
+  }
+  public Command autoStartLauncherRight(double velocity) {
+
+      return Commands.runEnd(() -> setLaunchVelocity(velocity), () -> setLaunchPower(0)); //this could be wrong hopefully not yay
+      
+  }
+
+  public Command intakeSpeedCommand(FuelSubSystem fuelSubsystem, DoubleSupplier forward, DoubleSupplier reverse) {
+    return Commands.run(() -> setIntakeFeederPower(forward.getAsDouble() - reverse.getAsDouble()), fuelSubsystem);
+  }
+  public Command setFeederCommand(FuelSubSystem fuelSubSystem, double speed) {
+    return Commands.runEnd(() -> setFeederLaunchPower(speed), () -> setFeederLaunchPower(0));
+  }
+
+  public Command setIntakeCommand(FuelSubSystem fuelSubSystem, double speed) {
+    return Commands.runEnd(() -> setIntakeFeederPower(speed), () -> setIntakeFeederPower(0));
+  }
+
+  public Command changeTargetVelocityCommand(double delta) {
+    return Commands.runOnce(() -> changeTargetVelocity(delta));
+  }
+
+}
