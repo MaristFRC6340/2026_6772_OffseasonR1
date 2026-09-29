@@ -125,7 +125,7 @@ public void setDesiredAngle() {
 
     // Start Launcher Motors
     operatorController.x()
-      .whileTrue(fuelSubSystem.launchVelocityCommand(fuelSubSystem, MID_DISTANCE_VELOCITY)); 
+      .whileTrue(fuelSubSystem.launchVelocityCommand(fuelSubSystem, NEAR_DISTANCE_VELOCITY)); 
       //.whileTrue(fuelSubSystem.launchVelocityTestcommand(fuelSubSystem));
       // Not really RPM yet about 8:1 Ratio 550 -> 4400 RPM
 

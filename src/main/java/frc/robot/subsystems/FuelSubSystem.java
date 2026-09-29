@@ -227,7 +227,6 @@ public class FuelSubSystem extends SubsystemBase {
   public void setFeederLaunchPower(double power) {
     intakeMotor.set(-power);
     feederRoller.set(power);
-    //indexMotor.set(power); 
   }
 
   
