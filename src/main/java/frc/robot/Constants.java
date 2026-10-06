@@ -56,10 +56,11 @@ public final class Constants {
     public static final double FEEDER_LAUNCH_POWER = 0.8;
     public static final double FEEDER_STIR_POWER = -0.8;
 
-    public static final double NEAR_DISTANCE_VELOCITY  = 650;
-    public static final double CENTER_DISTANCE_VELOCITY  = 700;
-    public static final double MID_DISTANCE_VELOCITY = 750;
-    public static final double FAR_DISTANCE_VELOCITY = 800;
+    // For TalonFX - Revolutions Per Second
+    public static final double NEAR_DISTANCE_VELOCITY  = 65;
+    public static final double CENTER_DISTANCE_VELOCITY  = 50;
+    public static final double MID_DISTANCE_VELOCITY = 60;
+    public static final double FAR_DISTANCE_VELOCITY = 70;
 
     public static final double LEFT_AUTO_SHOOTER_OFFSET = 50;
     public static final double CENTER_AUTO_CLIMB_SHOOTER_OFFSET = 90;

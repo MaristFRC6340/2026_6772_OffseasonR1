@@ -42,7 +42,7 @@ import static frc.robot.Constants.FuelConstants.*;
 public class FuelSubSystem extends SubsystemBase {
 
   // Fields for motor controllers and sensors related to the fuel system would be declared here
-  private SparkFlex feederRoller;
+  private SparkMax feederRoller;
   //private SparkMax launcherLeft;
   //private SparkMax launcherRight;
   private SparkFlex intakeMotor;
@@ -67,7 +67,7 @@ public class FuelSubSystem extends SubsystemBase {
   public FuelSubSystem() {
 
       // Initialize motor controllers and sensors here
-      feederRoller = new SparkFlex(Constants.FuelConstants.FUEL_FEEDER_ID, MotorType.kBrushless);
+      feederRoller = new SparkMax(Constants.FuelConstants.FUEL_FEEDER_ID, MotorType.kBrushless);
       intakeMotor = new SparkFlex(Constants.FuelConstants.FUEL_INTAKE_ID, MotorType.kBrushless);
 
       // Setup Shooter TalonFX Motors
@@ -104,26 +104,7 @@ public class FuelSubSystem extends SubsystemBase {
       intakeMotor.configure(feederConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
       //indexMotor.configure(feederConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
-      // Setup Configuration for Launcher Motors and PID
-      SparkMaxConfig launcherConfig = new SparkMaxConfig();
-      launcherConfig.smartCurrentLimit(Constants.FuelConstants.LAUNCHER_CURRENT_LIMIT);
-      launcherConfig.idleMode(IdleMode.kCoast);
-      //launcherConfig.follow(launcherLeft, true);
-
-      // PID Configuration
-      // Conversion Factors - built in so using 1
-      launcherConfig.encoder
-        .positionConversionFactor(1)
-        .velocityConversionFactor(1);
-
-      // Configure Closed Loop Control with P,I,D,Feed Forward values
-      // Defaults to Slot 0 where we are using velocity control
-      launcherConfig.closedLoop
-        .p(0.00015)
-        .i(0)
-        .d(0)
-        .outputRange(0, 0.95)
-        .feedForward.kV( 12.0 / 5767); // 12 Volts divided by Maximum RPM of NEO (12.0 / 5767)
+     
 
       // Smart Dashboard
       double rightShooterVelocity = rightShooter.getVelocity().getValueAsDouble()*60;
@@ -220,18 +201,18 @@ public class FuelSubSystem extends SubsystemBase {
 
   public void setIntakeFeederPower(double power) {
     intakeMotor.set(power);
-    feederRoller.set(power);
+    feederRoller.set(-power);
     //indexMotor.set(power);
   }
 
   public void setFeederLaunchPower(double power) {
     intakeMotor.set(-power);
-    feederRoller.set(power);
+    feederRoller.set(-power);
   }
 
   
    public void setFeederSpeed(double power) {
-    feederRoller.set(power);
+    feederRoller.set(-power);
   }
 
   public void changeTargetVelocity(double delta) {
