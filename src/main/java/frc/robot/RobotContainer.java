@@ -67,12 +67,19 @@ public class RobotContainer {
     // Start Position Commands - Not Used anymore
    
     // Launcher Commands
+    NamedCommands.registerCommand("Start Launcher Near", fuelSubSystem.launchVelocityCommand(fuelSubSystem, NEAR_DISTANCE_VELOCITY));
     
     //offseted shooting for auto
    
     // LimeLight distance Velocity for Auto
    
     // Feeder and Intake Commands
+    NamedCommands.registerCommand("Feeder Start", fuelSubSystem.setFeederCommand(fuelSubSystem, -0.8));
+    NamedCommands.registerCommand("Stop Feeder", fuelSubSystem.setFeederCommand(fuelSubSystem, 0));
+    NamedCommands.registerCommand("Auto Aim", driveTrainSubsystem.aimCommand());
+    NamedCommands.registerCommand("Intake", fuelSubSystem.intakeSpeedCommand(fuelSubSystem, () -> 0.8, () -> 0.0).withTimeout(5));
+    NamedCommands.registerCommand("Stop Launcher", fuelSubSystem.stopLauncherCommand(fuelSubSystem));
+    NamedCommands.registerCommand("Stop Intake", fuelSubSystem.setIntakeCommand(fuelSubSystem,0));
    
     autoChooser = AutoBuilder.buildAutoChooser();
     SmartDashboard.putData("Auto Chooser", autoChooser);

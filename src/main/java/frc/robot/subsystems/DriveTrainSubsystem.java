@@ -289,7 +289,7 @@ public DriveTrainSubsystem() {
   }
 
   public void driveAim() {
-    turnError = tx.getDouble(0);
+    turnError = tx.getDouble(0); // Offset for close shooting
     turnPower = kP * turnError;
     drive.arcadeDrive(0, turnPower);
     desiredAngle = -1 * (m_gyro.getAngle() + GYRO_OFFSET);
